@@ -5,93 +5,238 @@ const viem_1 = require("viem");
 const accounts_1 = require("viem/accounts");
 const chains_1 = require("viem/chains");
 require("dotenv/config");
-const RPC_URL = process.env.RPC_URL || 'https://sepolia.infura.io';
-const KEEPER_PRIVATE_KEY = process.env.KEEPER_PRIVATE_KEY;
-const VAULT_ADDRESS = process.env.VAULT_ADDRESS;
-if (!KEEPER_PRIVATE_KEY || !VAULT_ADDRESS) {
-    throw new Error("Missing crucial environment variables");
+// 1. Structural Environment Verification Rules
+const ARB_SEPOLIA_RPC_URL = process.env.ARB_SEPOLIA_RPC_URL?.trim();
+const KEEPER_PRIVATE_KEY = process.env.KEEPER_PRIVATE_KEY?.replace(/;/g, '').trim();
+const VAULT_ADDRESS_ARB_SEPOLIA_ONE_PERCENT_FEE_TIER = process.env.VAULT_ADDRESS_ARB_SEPOLIA_ONE_PERCENT_FEE_TIER?.replace(/;/g, '').trim();
+const VAULT_ADDRESS_ARB_SEPOLIA_POINT_THREE_PERCENT_FEE_TIER = process.env.VAULT_ADDRESS_ARB_SEPOLIA_POINT_THREE_PERCENT_FEE_TIER?.replace(/;/g, '').trim();
+const VAULT_ADDRESS_ARB_SEPOLIA_POINT_ZERO_FIVE_PERCENT_FEE_TIER = process.env.VAULT_ADDRESS_ARB_SEPOLIA_POINT_ZERO_FIVE_PERCENT_FEE_TIER?.replace(/;/g, '').trim();
+const USDC_WETH_POOL_RANGE_AI_ARB_SEPOLIA_10000 = process.env.USDC_WETH_POOL_RANGE_AI_ARB_SEPOLIA_10000?.replace(/;/g, '').trim();
+const USDC_WETH_POOL_RANGE_AI_ARB_SEPOLIA_3000 = process.env.USDC_WETH_POOL_RANGE_AI_ARB_SEPOLIA_3000?.replace(/;/g, '').trim();
+const USDC_WETH_POOL_RANGE_AI_ARB_SEPOLIA_500 = process.env.USDC_WETH_POOL_RANGE_AI_ARB_SEPOLIA_500?.replace(/;/g, '').trim();
+if (!KEEPER_PRIVATE_KEY || !VAULT_ADDRESS_ARB_SEPOLIA_ONE_PERCENT_FEE_TIER || !VAULT_ADDRESS_ARB_SEPOLIA_POINT_THREE_PERCENT_FEE_TIER || !VAULT_ADDRESS_ARB_SEPOLIA_POINT_ZERO_FIVE_PERCENT_FEE_TIER || !ARB_SEPOLIA_RPC_URL) {
+    throw new Error("Missing crucial multichain environment variables inside operational setup context.");
 }
+const RANGE_AI_USDC = "0x36BD22d795316C9FaE0e7E6193C3AdC6eC231B11".replace(/;/g, '').trim();
+const RANGE_AI_WETH = "0x8B76E900079A028639A57f23AcD71eFD3a0598a4".replace(/;/g, '').trim();
+const UNISWAP_V3_ROUTER_02 = "0x101F443B4d1b059569D643917553c771E1b9663E".replace(/;/g, '').trim();
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// 2. High-Utility ABI Definition Structural Interfaces
 const vaultAbi = (0, viem_1.parseAbi)([
     'function tokenId() view returns (uint256)',
     'function tickLower() view returns (int24)',
     'function tickUpper() view returns (int24)',
     'function pool() view returns (address)',
     'function rebalance(int24 tickHalfWidth) external',
-    'error AutoCLVault__Unauthorized()'
+    'function deposit(uint256 amount0Desired, uint256 amount1Desired) external returns (uint256 shares)'
 ]);
 const poolAbi = (0, viem_1.parseAbi)([
-    'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)'
+    'function slot0() view returns (uint160, int24, uint16, uint16, uint16, uint8, bool)'
 ]);
-// initializing web3 clients
-const publicClient = (0, viem_1.createPublicClient)({
-    chain: chains_1.sepolia,
-    transport: (0, viem_1.http)(RPC_URL)
-});
+const erc20RangeAiAbi = (0, viem_1.parseAbi)([
+    'function mint(uint256 amountWithoutDecimals) external',
+    'function balanceOf(address account) view returns (uint256)',
+    'function allowance(address owner, address spender) view returns (uint256)',
+    'function approve(address spender, uint256 amount) external returns (bool)'
+]);
+const router02Abi = (0, viem_1.parseAbi)([
+    'struct ExactInputSingleParams { address tokenIn; address tokenOut; uint24 fee; address recipient; uint256 amountIn; uint256 amountOutMinimum; uint160 sqrtPriceLimitX96; }',
+    'function exactInputSingle(ExactInputSingleParams calldata params) external payable returns (uint256 amountOut)'
+]);
 const account = (0, accounts_1.privateKeyToAccount)(KEEPER_PRIVATE_KEY);
-const walletClient = (0, viem_1.createWalletClient)({
-    account,
-    chain: chains_1.sepolia,
-    transport: (0, viem_1.http)(RPC_URL)
-});
+const multichainWorkers = [
+    {
+        chainName: "Arbitrum Sepolia USDC_WETH Vault Range AI [1%]",
+        vaultAddress: VAULT_ADDRESS_ARB_SEPOLIA_ONE_PERCENT_FEE_TIER,
+        poolAddress: USDC_WETH_POOL_RANGE_AI_ARB_SEPOLIA_10000,
+        feeTier: 10000,
+        publicClient: (0, viem_1.createPublicClient)({ chain: chains_1.arbitrumSepolia, transport: (0, viem_1.http)(ARB_SEPOLIA_RPC_URL) }),
+        walletClient: (0, viem_1.createWalletClient)({ account, chain: chains_1.arbitrumSepolia, transport: (0, viem_1.http)(ARB_SEPOLIA_RPC_URL) })
+    },
+    {
+        chainName: "Arbitrum Sepolia USDC_WETH Vault Range AI [0.3%]",
+        vaultAddress: VAULT_ADDRESS_ARB_SEPOLIA_POINT_THREE_PERCENT_FEE_TIER,
+        poolAddress: USDC_WETH_POOL_RANGE_AI_ARB_SEPOLIA_3000,
+        feeTier: 3000,
+        publicClient: (0, viem_1.createPublicClient)({ chain: chains_1.arbitrumSepolia, transport: (0, viem_1.http)(ARB_SEPOLIA_RPC_URL) }),
+        walletClient: (0, viem_1.createWalletClient)({ account, chain: chains_1.arbitrumSepolia, transport: (0, viem_1.http)(ARB_SEPOLIA_RPC_URL) })
+    },
+    {
+        chainName: "Arbitrum Sepolia USDC_WETH Range AI Vault [0.05%]",
+        vaultAddress: VAULT_ADDRESS_ARB_SEPOLIA_POINT_ZERO_FIVE_PERCENT_FEE_TIER,
+        poolAddress: USDC_WETH_POOL_RANGE_AI_ARB_SEPOLIA_500,
+        feeTier: 500,
+        publicClient: (0, viem_1.createPublicClient)({ chain: chains_1.arbitrumSepolia, transport: (0, viem_1.http)(ARB_SEPOLIA_RPC_URL) }),
+        walletClient: (0, viem_1.createWalletClient)({ account, chain: chains_1.arbitrumSepolia, transport: (0, viem_1.http)(ARB_SEPOLIA_RPC_URL) })
+    },
+];
 /**
- * @notice the core evaluation module running every block to track pool states
+ * @notice Automated seeding engine that runs if vault storage bounds read [0, 0]
+ * @dev Mints sandbox tokens and fires a deposit to bind the strategy securely around the spot price
  */
-async function inspectAndMaintainVaultRange() {
-    console.log("Checking active position metrics across boundaries...");
+async function autoSeedVaultBoundariesIfUninitialized(worker) {
     try {
-        // fetching the vault's internal tracking configurations
-        const [tickLower, tickUpper, poolAddress] = await Promise.all([
-            publicClient.readContract({ address: VAULT_ADDRESS, abi: vaultAbi, functionName: 'tickLower' }),
-            publicClient.readContract({ address: VAULT_ADDRESS, abi: vaultAbi, functionName: 'tickUpper' }),
-            publicClient.readContract({ address: VAULT_ADDRESS, abi: vaultAbi, functionName: 'pool' })
+        const [tickLower, tickUpper] = await Promise.all([
+            worker.publicClient.readContract({ address: worker.vaultAddress, abi: vaultAbi, functionName: 'tickLower' }),
+            worker.publicClient.readContract({ address: worker.vaultAddress, abi: vaultAbi, functionName: 'tickUpper' })
         ]);
-        // fetching the current physical slot0 tick state from the Uniswap pool
-        const slot0Data = await publicClient.readContract({
-            address: poolAddress,
-            abi: poolAbi,
-            functionName: 'slot0'
-        });
-        const currentTick = slot0Data[1];
-        console.log(`Current pool tick: ${currentTick} | Position bounds: [${tickLower}, ${tickUpper}]`);
-        // checking if market spot prices have shifted outside our active boundaries
-        if (currentTick <= tickLower || currentTick >= tickUpper) {
-            console.log("tickLower: ", tickLower);
-            console.log("tickUpper: ", tickUpper);
-            console.warn("⚠️ Market price breach detected! Initiating vault rebalance...");
-            // executing automated transaction routing
-            // setting targeted width multiplier parameters (e.g. width of 20 spaces)
-            const tickHalfWidth = 20;
-            const { request } = await publicClient.simulateContract({
-                account,
-                address: VAULT_ADDRESS,
-                abi: vaultAbi,
-                functionName: 'rebalance',
-                args: [tickHalfWidth]
+        // System Check: Skip initialization step if vault values are already set
+        if (tickLower !== 0 || tickUpper !== 0)
+            return;
+        console.log(`\n[Auto-Seeder] Detected uninitialized bounds [0, 0] on ${worker.chainName}`);
+        console.log(`[Auto-Seeder] Preparing nominal balance minting parameters...`);
+        const seedAmt0 = (0, viem_1.parseUnits)("1000", 6); // 1000 Sandbox USDC
+        const seedAmt1 = (0, viem_1.parseUnits)("0.5", 18); // 0.5 Sandbox WETH
+        // Step 1: Automated Faucet Minting for token0 & token1
+        for (const token of [RANGE_AI_USDC, RANGE_AI_WETH]) {
+            const { request: mintReq } = await worker.publicClient.simulateContract({
+                account, address: token, abi: erc20RangeAiAbi, functionName: 'mint', args: [50000n]
             });
-            const hash = await walletClient.writeContract(request);
-            console.log(`Rebalance execution achieved successfully! Tx hash: ${hash}`);
-            const receipt = await publicClient.waitForTransactionReceipt({ hash });
-            console.log(`Block confirmation received in block index: ${receipt.blockNumber}`);
+            const mintHash = await worker.walletClient.writeContract(mintReq);
+            await worker.publicClient.waitForTransactionReceipt({ hash: mintHash });
+        }
+        console.log(`[Auto-Seeder] Faucet minting resolved. Assigning vault allowances...`);
+        // Step 2: Grant standard ERC-20 spending allowances to the target vault address
+        for (const token of [RANGE_AI_USDC, RANGE_AI_WETH]) {
+            const { request: appReq } = await worker.publicClient.simulateContract({
+                account, address: token, abi: erc20RangeAiAbi, functionName: 'approve', args: [worker.vaultAddress, viem_1.maxUint256]
+            });
+            const appHash = await worker.walletClient.writeContract(appReq);
+            await worker.publicClient.waitForTransactionReceipt({ hash: appHash });
+        }
+        // Step 3: Fire initial deposit to anchor strategy positions around the live tick
+        console.log(`[Auto-Seeder] Submitting nominal funding deposit parameters to initialize bounds...`);
+        const { request: depReq } = await worker.publicClient.simulateContract({
+            account,
+            address: worker.vaultAddress,
+            abi: vaultAbi,
+            functionName: 'deposit',
+            args: [seedAmt0, seedAmt1]
+        });
+        const depHash = await worker.walletClient.writeContract(depReq);
+        await worker.publicClient.waitForTransactionReceipt({ hash: depHash });
+        console.log(`[Auto-Seeder] Seeding successful! Vault initialized. Tx Hash: ${depHash}`);
+        await delay(2000);
+    }
+    catch (error) {
+        console.error(`[Auto-Seeder Error] Failed to execute target vault initialization:`, error);
+    }
+}
+// BY GOD'S GRACE ALONE
+/**
+ * @notice Self-sufficient asset engine that manages token creation and forces sandbox swaps
+ * @dev Dynamic allocation routes trades directly through worker.feeTier to ensure pool matching structures
+ */
+async function executeSimulatedMarketVolatility(worker, directionUp) {
+    try {
+        const tokenIn = directionUp ? RANGE_AI_USDC : RANGE_AI_WETH;
+        const tokenOut = directionUp ? RANGE_AI_WETH : RANGE_AI_USDC;
+        const currentBalance = await worker.publicClient.readContract({
+            address: tokenIn, abi: erc20RangeAiAbi, functionName: 'balanceOf', args: [account.address]
+        });
+        if (currentBalance < (0, viem_1.parseUnits)("10", directionUp ? 6 : 18)) {
+            console.log(`[Volatility Engine] Minting sandbox tokens for: ${worker.chainName}...`);
+            const mintAmount = directionUp ? 500000n : 5000n;
+            const { request } = await worker.publicClient.simulateContract({
+                account, address: tokenIn, abi: erc20RangeAiAbi, functionName: 'mint', args: [mintAmount]
+            });
+            const hash = await worker.walletClient.writeContract(request);
+            await worker.publicClient.waitForTransactionReceipt({ hash });
+            console.log(`[Volatility Engine] Mint successful! Tx Hash: ${hash}`);
+            await delay(1000);
+        }
+        const routerAllowance = await worker.publicClient.readContract({
+            address: tokenIn, abi: erc20RangeAiAbi, functionName: 'allowance', args: [account.address, UNISWAP_V3_ROUTER_02]
+        });
+        if (routerAllowance < viem_1.maxUint256 / 2n) {
+            console.log(`[Volatility Engine] Authorizing Router02 spend limits...`);
+            const { request } = await worker.publicClient.simulateContract({
+                account, address: tokenIn, abi: erc20RangeAiAbi, functionName: 'approve', args: [UNISWAP_V3_ROUTER_02, viem_1.maxUint256]
+            });
+            const hash = await worker.walletClient.writeContract(request);
+            await worker.publicClient.waitForTransactionReceipt({ hash });
+            await delay(1000);
+        }
+        const swapAmount = directionUp ? (0, viem_1.parseUnits)("500", 6) : (0, viem_1.parseUnits)("0.2", 18);
+        console.log(`[Volatility Engine] Sending live market order parameters to alter pool positions...`);
+        // FIX: Replaced static fee mapping with worker.feeTier to match specific pool routing structures
+        const { request: swapRequest } = await worker.publicClient.simulateContract({
+            account,
+            address: UNISWAP_V3_ROUTER_02,
+            abi: router02Abi,
+            functionName: 'exactInputSingle',
+            args: [{
+                    tokenIn,
+                    tokenOut,
+                    fee: worker.feeTier,
+                    recipient: account.address,
+                    amountIn: swapAmount,
+                    amountOutMinimum: 0n,
+                    sqrtPriceLimitX96: 0n
+                }]
+        });
+        const swapHash = await worker.walletClient.writeContract(swapRequest);
+        console.log(`[Volatility Engine] Volatility swap completed successfully! Tx Hash: ${swapHash}`);
+    }
+    catch (error) {
+        console.error(`[Volatility Engine Error] Swap execution faulted on Router02 for ${worker.chainName}:`, error);
+    }
+}
+async function inspectAndMaintainVaultRange(worker) {
+    try {
+        const [tickLower, tickUpper] = await Promise.all([
+            worker.publicClient.readContract({ address: worker.vaultAddress, abi: vaultAbi, functionName: 'tickLower' }),
+            worker.publicClient.readContract({ address: worker.vaultAddress, abi: vaultAbi, functionName: 'tickUpper' })
+        ]);
+        const slot0Data = await worker.publicClient.readContract({ address: worker.poolAddress, abi: poolAbi, functionName: 'slot0' });
+        const currentTick = Number(slot0Data[1]);
+        console.log(`[${worker.chainName}] Current pool tick: ${currentTick} | Position bounds: [${tickLower}, ${tickUpper}]`);
+        if (tickLower === 0 && tickUpper === 0) {
+            console.log(`[${worker.chainName}] Vault boundaries uninitialized. Skipping monitoring loop iteration.`);
+            return;
+        }
+        if (currentTick <= tickLower || currentTick >= tickUpper) {
+            console.warn(`[${worker.chainName}] ⚠️ Strategy range violation! Initiating contract rebalance...`);
+            const tickHalfWidth = 20;
+            const { request } = await worker.publicClient.simulateContract({
+                account, address: worker.vaultAddress, abi: vaultAbi, functionName: 'rebalance', args: [tickHalfWidth]
+            });
+            const hash = await worker.walletClient.writeContract(request);
+            console.log(`[${worker.chainName}] Rebalance transaction achieved! Tx Hash: ${hash}`);
+            await worker.publicClient.waitForTransactionReceipt({ hash });
         }
         else {
-            console.log("Position boundaries remain optimal. Yield structures safe.");
+            console.log(`[${worker.chainName}] Position ranges are healthy. Yield allocations safe.`);
         }
     }
     catch (error) {
-        console.error("Execution error encountered in monitoring routing loop:", error);
+        console.error(`[${worker.chainName}] Maintenance parsing execution failed:`, error);
     }
 }
-/**
- * @notice automated daemon initializer
- */
-function startKeeperDaemon() {
-    console.log(`RangeBound AI Automation Engine Online. Monitoring Vault at: ${VAULT_ADDRESS}`);
-    // Poll current states on every new finalized block arrival
-    publicClient.watchBlocks({
-        onBlock: async (block) => {
-            console.log(`\n New Block Inbound: #${block.number}`);
-            await inspectAndMaintainVaultRange();
-        }
+async function startMultichainKeeperDaemon() {
+    console.log("=== RangeBound AI Multichain Strategy Engine Online ===");
+    console.log("[Bootstrap] Executing pre-flight checks and seeding sequences...");
+    // Run the seeding logic sequentially across workers before starting live watchers
+    for (const worker of multichainWorkers) {
+        await autoSeedVaultBoundariesIfUninitialized(worker);
+    }
+    console.log("[Bootstrap] Verification complete. Booting active listeners.");
+    let swapToggleDirection = true;
+    multichainWorkers.forEach((worker) => {
+        // Stream 1: Listen for new blocks to review range alignments
+        worker.publicClient.watchBlocks({
+            onBlock: async (block) => {
+                console.log(`\n[${worker.chainName}] New Block Inbound: #${block.number}`);
+                await inspectAndMaintainVaultRange(worker);
+            },
+            onError: (error) => console.error(`[${worker.chainName}] Subscription connection drop:`, error)
+        });
+        // Stream 2: Interval swaps running every 3 minutes to simulate price movement safely
+        setInterval(async () => {
+            console.log(`\n[Timer Trigger] Submitting trades to shift ticks for ${worker.chainName}...`);
+            await executeSimulatedMarketVolatility(worker, swapToggleDirection);
+            swapToggleDirection = !swapToggleDirection;
+        }, 10000);
     });
 }
-startKeeperDaemon();
+startMultichainKeeperDaemon();
