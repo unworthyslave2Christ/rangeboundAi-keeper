@@ -4,8 +4,7 @@
   "description": "Automated Keeper Infrastructure for RangeBound AI",
   "main": "dist/keeper.js",
   "scripts": {
-    "start": "tsc && node dist/keeper_init.js",
-    "start2": "tsc && node dist/keeper.js"
+    "start": "tsc && node dist/keeper.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
